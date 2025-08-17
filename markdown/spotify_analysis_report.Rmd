@@ -1,0 +1,455 @@
+---
+title: "spotify"
+author: "Kai Wen"
+date: "2025-05-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggcorrplot)
+library(readr)
+library(tidyverse)
+library(tidytext)
+library(DT)
+getwd()
+```
+
+First, we will import out dataset from Kaggle, Top Spotify songs from 2010-2019 - BY YEAR
+
+```{r}
+spotify <- read_csv("top10s.csv", locale = locale(encoding = "UTF-8"))
+
+spotify[] <- lapply(spotify, function(x) {
+  if (is.character(x)) iconv(x, from = "", to = "UTF-8", sub = "")
+  else x
+})
+
+# Step 3: Display in DT
+datatable(spotify)
+```
+
+Initial Data Exploration
+
+We will explore our data by analyzing the rows and column within the dataset and getting to know the shape of it while also familiarizing with the column names of the dataset.
+ 
+```{r}
+head(spotify)
+str(spotify) 
+colnames(spotify) 
+summary(spotify) 
+dim(spotify)
+```
+
+Data Cleaning 
+
+From the dataset, we can see that column 1 has a name of "...1".
+We will rename it as Song No.
+
+
+```{r}
+colnames(spotify)[1] <- "Song no."
+colnames(spotify)[4] <- "top_genre"
+```
+
+We will now find if there are any missing values
+
+```{r}
+spotify %>% 
+  summarize(across(everything(), ~sum(is.na(.))))
+```
+
+We will now filter out the values to find if there are rows with meaningless values
+
+```{r}
+spotify %>% 
+  filter(
+    bpm == 0,
+    nrgy == 0,
+    dnce == 0,
+    live == 0,
+    val == 0,
+    acous == 0,
+    spch == 0,
+    pop == 0
+  )
+```
+
+We can find out that there is one row - Adele's Million Years Ago has several values of '0' across the columns. We will now filter it out to not affect our research
+
+```{r}
+spotify <- spotify %>% 
+  filter(!title == "Million Years Ago")
+```
+
+We will now check if any songs has appeared twice to remove the duplicates
+
+```{r}
+spotify %>% 
+  add_count(artist, title) %>% 
+  filter(n > 1) %>% 
+  arrange(title)
+```
+
+As we can see, there are a total of 16 duplicated songs with on year apart between them. We will remove the year after they have been originally released
+
+```{r}
+spotify <-  spotify %>% 
+  arrange(year) %>% 
+  distinct(title, artist, .keep_all = TRUE)
+```
+
+We will see if there are others type of values in their respective data type of column
+
+```{r}
+spotify %>% 
+  select(title, artist, top_genre) %>%
+  sapply(is.character)
+
+spotify %>% 
+  select(year:pop) %>% 
+  sapply(is.numeric)
+```
+
+Data Transformation
+
+We will be simplifying the top_genre columns into a total of 27 columns
+generalizing all pop as one category and all hip hop as one category, r&b as one category and all edm as one category
+
+```{r}
+
+genre <-  function(x, y){
+  str_detect(x, y)
+}
+
+
+spotify <- spotify %>% 
+  mutate(top_genre = case_when(
+    genre(top_genre, "hip hop") ~ "hip hop",
+    genre(top_genre, "pop") ~ "pop",
+    genre(top_genre, "r&b") ~ "r&b",
+    genre(top_genre, "edm") ~ "edm",
+    TRUE ~ top_genre)) 
+
+```
+
+Data Analysis
+Various statistics were obtained through the analysis process:
+
+Top 10 songs over 2010-2019
+
+```{r}
+spotify_popularity <- spotify %>% 
+  slice_max(pop, n = 10)
+
+datatable(spotify_popularity)
+```
+
+Top 10 songs for each 2010-2019
+
+```{r}
+spotify_yearly_popularity <- spotify %>% 
+  group_by(year) %>% 
+  slice_max(pop, n = 10) %>% 
+  ungroup()
+
+datatable(spotify_yearly_popularity)
+```
+
+Highest rated song of the year
+
+```{r}
+spotify_top_song_per_year <-  spotify %>% 
+  group_by(year) %>% 
+  slice_max(pop, n = 1)
+
+datatable(spotify_top_song_per_year)
+```
+
+Mean Duration Genre-wise
+
+```{r}
+genre_duration <-  spotify %>% 
+  group_by(top_genre) %>% 
+  summarize(avg_duration = round(mean(dur, na.rm = TRUE),1)) %>% 
+  arrange(avg_duration)
+
+datatable(genre_duration)
+```
+
+Number of songs released by every artist.
+
+```{r}
+spotify_artist_songs <- spotify %>% 
+  count(artist) %>% 
+  arrange(desc(n))
+
+datatable(spotify_artist_songs)
+```
+
+Highest energy and dancebility songs
+
+```{r}
+highest_positivity <-  spotify %>% 
+  slice_max(nrgy, n = 10)
+
+datatable(highest_positivity)
+
+highest_dancebility <-  spotify %>% 
+  slice_max(dnce, n = 10)
+
+datatable(highest_dancebility)
+```
+
+Most popular artist in 2019.
+
+```{r}
+popular_artist <-  spotify %>% 
+  filter(year == 2019) %>% 
+  group_by(artist) %>% 
+  summarize(pop = mean(pop),
+            total_songs = n()) %>% 
+  arrange(-pop, -total_songs) %>% 
+  slice_max(pop, n = 15)
+
+datatable(popular_artist)
+```
+
+Top 5 Genres Per Year
+
+```{r}
+top5_genres <- spotify %>% 
+  group_by(year) %>% 
+  count(top_genre) %>% 
+  filter(! n == 0) %>% 
+  slice_max(n, n = 5) %>% 
+  ungroup()
+    
+datatable(top5_genres)
+```
+
+Average popularity of Songs Per Year
+
+```{r}
+avg_popularity_per_year <- spotify %>% 
+  group_by(year) %>% 
+  summarize(avg_pop = round(mean(pop)))
+
+datatable(avg_popularity_per_year)
+```
+
+Average Bpm of Songs Per Year
+
+```{r}
+average_bpm <-  spotify %>% 
+  group_by(year) %>% 
+  summarize(abg_bpm = round(mean(bpm)))
+
+datatable(average_bpm)
+```
+
+Average Duration of Songs Per Year
+
+```{r}
+average_duration_per_year <- spotify %>% 
+  group_by(year) %>% 
+  summarize(avg_duration = mean(dur))
+
+datatable(average_duration_per_year)
+```
+
+Data Visualization
+
+We will now visualize the correlation of each column with the help of correlation matrix
+
+```{r}
+
+colnames(spotify)
+num_vars <- spotify %>% 
+  select(where(is.numeric), -'Song no.') 
+
+
+corr_matrix <- cor(num_vars, use = "complete.obs")
+
+ggcorrplot(corr_matrix, type = "lower", lab = TRUE)
+```
+
+We will now visualize the average durations of songs for each genre
+
+```{r}
+ggplot(genre_duration)+
+  geom_bar(aes(x = fct_reorder(top_genre, avg_duration), y = avg_duration, fill = top_genre), stat="identity")+
+  theme_minimal()+
+  labs(
+    title = "Average Song Duration for Each Genre",
+    subtitle = "Duration Measured in Seconds (s)",
+    y = "Song Genres",
+    x = "Song Duration"
+  )+
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 14),
+    axis.title = element_text(size = 12),
+    legend.position = "none"
+  )+
+  coord_flip()
+```
+
+We will now visualize the Total Song Genres Over the Years
+
+```{r}
+ggplot(top5_genres)+
+  geom_bar(aes(x = reorder_within(top_genre, n, year), y = n, fill = top_genre),stat = "identity")+
+  labs(
+    title = "Top Song Genres Per Year",
+    subtitle = "y-axis is adjusted according to each plot",
+    x = "Song Genres",
+    y = "Total"
+  )+
+  theme_minimal()+
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text.x = element_blank()
+  )+
+  facet_wrap(~year, scales = "free_x")
+```
+
+We will now visualize the average duration of songs per year
+
+```{r}
+ggplot(average_duration_per_year)+
+  geom_bar(aes(x = year, avg_duration, fill = year), stat = "identity")+
+  scale_x_continuous(breaks = seq(2010,2019, 3))+
+  labs(
+    title = "Average Duration of Songs Per Year",
+    subtitle = "Measured in Seconds (s)"
+    )+
+  theme_minimal()+
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  )
+
+```
+
+We will now visualize the correlation between bpm and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = bpm , y = pop))+
+  geom_smooth(aes(x = bpm , y = pop), method = "loess")+
+  labs(
+    title = "Correlation between bpm and pop"
+  )
+
+cor(spotify$bpm, spotify$pop)
+```
+
+We will now visualize the correlation between nrgy and pop
+
+```{r}
+
+ggplot(spotify)+
+  geom_point(aes(x = nrgy, y = pop))+
+  geom_smooth(aes(x = nrgy, y = pop), method = "loess")+
+  labs(
+    title = "Correlation between nrgy and pop"
+  )
+
+cor(spotify$nrgy, spotify$pop)
+```
+
+We will now visualize the correlation between dnce and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = dnce, y = pop))+
+  geom_smooth(aes(x = dnce, y = pop))+
+  labs(
+    title = "Correlation between dnce and pop"
+  )
+
+cor(spotify$dnce, spotify$pop)
+```
+
+We will now visualize the correlation between dB and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = dB, y = pop))+
+  geom_smooth(aes(x = dB, y = pop))+
+  labs(
+    title = "Correlation between decibels and pop"
+  )
+
+cor(spotify$dB, spotify$pop)
+```
+
+We will now visualize the correlation between live and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = live, y = pop))+
+  geom_smooth(aes(x = live, y = pop))+
+  labs(
+    title = "Correlation between live and pop"
+  )
+
+cor(spotify$live, spotify$pop)
+```
+
+We will now visualize the correlation between val and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = val, y = pop))+
+  geom_smooth(aes(x = val, y = pop))+
+  labs(
+    title = "Correlation between valence and pop"
+  )
+
+cor(spotify$val, spotify$pop)
+```
+
+We will now visualize the correlation between dur and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = dur, y = pop))+
+  geom_smooth(aes(x = dur, y = pop))+
+  labs(
+    title = "Correlation between duration and pop"
+  )
+
+cor(spotify$dur, spotify$pop)
+```
+
+We will now visualize the correlation between acous and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = acous, y = pop))+
+  geom_smooth(aes(x = acous, y = pop))+
+  labs(
+    title = "Correlation between acoustic and pop"
+  )
+
+cor(spotify$acous, spotify$pop)
+```
+
+We will now visualize the correlation between spch and pop
+
+```{r}
+ggplot(spotify)+
+  geom_point(aes(x = spch, y = pop))+
+  geom_smooth(aes(x = spch, y = pop))+
+  labs(
+    title = "Correlation between speechiness and pop"
+  )
+
+cor(spotify$spch, spotify$pop)
+```
+
+CONCLUSION: Only duration has a weak linear relationship between them with a shorter duration proved to be the more popular among listeners
+Meanwhile other factors do not play a role in affecting the popularity of the songs
